@@ -28,7 +28,7 @@ class Generator(nn.Module):
             nn.InstanceNorm2d(256),
             nn.ReLU(inplace=True)
         )
-        self.transformer = nn.Sequential(
+        self.bottleneck = nn.Sequential(
             *[ResNetBlock(256) for _ in range(num_residual_blocks)]
         )
         self.decoder = nn.Sequential(
@@ -43,6 +43,6 @@ class Generator(nn.Module):
         )
     def forward(self, x):
         x = self.encoder(x)
-        x = self.transformer(x)
+        x = self.bottleneck(x)
         x = self.decoder(x)
         return x
