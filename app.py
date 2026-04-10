@@ -29,13 +29,13 @@ def load_models():
 
     G_AB_path = hf_hub_download(
         repo_id=REPO_ID,
-        filename="checkpoints/G_AB_final.pth",
+        filename="checkpoints/G_AB_epoch50.pth",
         repo_type="model",
         token=hf_token        # ← pass token here too
     )
     G_BA_path = hf_hub_download(
         repo_id=REPO_ID,
-        filename="checkpoints/G_BA_final.pth",
+        filename="checkpoints/G_BA_epoch50.pth",
         repo_type="model",
         token=hf_token        # ← and here
     )
