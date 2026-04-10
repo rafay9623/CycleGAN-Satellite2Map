@@ -17,7 +17,7 @@ st.markdown("Upload a satellite image and translate it to a map — powered by C
 # ─────────────────────────────────────────
 # Load models from HuggingFace (cached)
 # ─────────────────────────────────────────
-REPO_ID = "adeelumar17/cyclegan/checkpoints/"  # replace with your HF repo
+REPO_ID = "adeelumar17/cyclegan"  # replace with your HF repo
 
 @st.cache_resource
 def load_models():
@@ -29,13 +29,13 @@ def load_models():
 
     G_AB_path = hf_hub_download(
         repo_id=REPO_ID,
-        filename="G_AB_epoch50.pth",
+        filename="checkpoints/G_AB_epoch50.pth",
         repo_type="model",
         token=hf_token        # ← pass token here too
     )
     G_BA_path = hf_hub_download(
         repo_id=REPO_ID,
-        filename="G_BA_epoch50.pth",
+        filename="checkpoints/G_BA_epoch50.pth",
         repo_type="model",
         token=hf_token        # ← and here
     )
