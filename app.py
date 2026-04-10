@@ -21,29 +21,28 @@ REPO_ID = "adeelumar17/cyclegan"  # replace with your HF repo
 
 @st.cache_resource
 def load_models():
-    # fetch token from streamlit secrets
     hf_token = st.secrets["HF_TOKEN"]
-    login(token=hf_token)
     
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     G_AB_path = hf_hub_download(
-        repo_id=REPO_ID,
+        repo_id="adeelumar17/cyclegan",
         filename="checkpoints/G_AB_epoch50.pth",
-        repo_type="model",
-        token=hf_token        # ← pass token here too
+        token=hf_token
     )
+
     G_BA_path = hf_hub_download(
-        repo_id=REPO_ID,
+        repo_id="adeelumar17/cyclegan",
         filename="checkpoints/G_BA_epoch50.pth",
-        repo_type="model",
-        token=hf_token        # ← and here
+        token=hf_token
     )
 
     G_AB = Generator()
     G_BA = Generator()
+
     G_AB.load_state_dict(torch.load(G_AB_path, map_location=device))
     G_BA.load_state_dict(torch.load(G_BA_path, map_location=device))
+
     G_AB.eval()
     G_BA.eval()
 
