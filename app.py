@@ -151,23 +151,24 @@ if (url_ab and not url_ba) or (not url_ab and url_ba):
     )
     st.stop()
 
-if repo_id == _DEFAULT_HF_REPO and not hf_token and not (url_ab and url_ba):
-    st.warning(
-        "The default Hugging Face repo often needs a **read token** or is unreachable. "
-        "Add secrets (**HF_TOKEN**), point to your own repo (**HF_REPO_ID**), or host the two "
-        "weights anywhere public and set **CKPT_G_AB_URL** + **CKPT_G_BA_URL** (direct file URLs)."
-    )
-
 _LOAD_HELP = (
-    "**Fix weight loading** (pick one):\n\n"
     "1. **HF_TOKEN** — [Create a read token](https://huggingface.co/settings/tokens), then in "
     "Streamlit: *Manage app → Secrets*:\n`HF_TOKEN = \"hf_…\"`\n\n"
     "2. **HF_REPO_ID** — Put `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a "
     "**public** Hub repo, then:\n`HF_REPO_ID = \"you/repo\"`\n\n"
     "3. **CKPT_G_AB_URL** and **CKPT_G_BA_URL** — Direct `https://…` links to each `.pth` "
     "(Google Drive “direct” links, GitHub raw, your own server, etc.).\n\n"
-    "4. **Git** — Commit both files under `checkpoints/` in this repo (see `.gitignore` if using LFS)."
+    "4. **Git** — Commit both files under `checkpoints/` in this repo (use Git LFS if files are large)."
 )
+
+
+def _show_weight_setup_help(download_detail: str | None = None) -> None:
+    st.error("Could not load model weights. Open **Weights & deployment** in the sidebar for a short summary.")
+    with st.expander("Step-by-step: fix weight loading", expanded=True):
+        st.markdown(_LOAD_HELP)
+        if download_detail:
+            st.text(download_detail)
+
 
 try:
     spin_msg = (
@@ -178,10 +179,10 @@ try:
     with st.spinner(spin_msg):
         G_AB, G_BA, device = load_models(repo_id, hf_token, url_ab, url_ba)
 except _HF_ACCESS_ERRORS:
-    st.error(_LOAD_HELP)
+    _show_weight_setup_help()
     st.stop()
 except (urllib.error.URLError, ValueError, OSError) as e:
-    st.error(_LOAD_HELP + f"\n\n_Download error:_ `{e}`")
+    _show_weight_setup_help(str(e))
     st.stop()
 st.success("Models loaded ✅")
 
