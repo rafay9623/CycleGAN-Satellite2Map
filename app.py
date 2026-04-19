@@ -1,5 +1,8 @@
+import hashlib
 import io
 import os
+import urllib.error
+import urllib.request
 
 import numpy as np
 import streamlit as st
@@ -53,27 +56,72 @@ def _hf_repo_id() -> str:
     return _secret_or_env("HF_REPO_ID", _DEFAULT_HF_REPO) or _DEFAULT_HF_REPO
 
 
+def _ckpt_direct_urls() -> tuple[str | None, str | None]:
+    """Direct HTTPS links to the two .pth files (any public host). Bypasses Hugging Face."""
+    return _secret_or_env("CKPT_G_AB_URL"), _secret_or_env("CKPT_G_BA_URL")
+
+
 def _local_checkpoint(relative_path: str) -> str | None:
     path = os.path.join(_APP_DIR, relative_path.replace("/", os.sep))
     return path if os.path.isfile(path) else None
 
 
+def _download_ckpt_url(url: str, filename_hint: str) -> str:
+    """Download a weight file once and reuse from `.ckpt_cache/` under the app directory."""
+    cache_dir = os.path.join(_APP_DIR, ".ckpt_cache")
+    os.makedirs(cache_dir, exist_ok=True)
+    digest = hashlib.sha256(url.encode("utf-8")).hexdigest()[:24]
+    dest = os.path.join(cache_dir, f"{digest}_{filename_hint}")
+    if os.path.isfile(dest) and os.path.getsize(dest) > 8192:
+        return dest
+    req = urllib.request.Request(
+        url,
+        headers={"User-Agent": "Mozilla/5.0 (compatible; CycleGAN-Streamlit/1.0)"},
+    )
+    tmp = dest + ".part"
+    try:
+        with urllib.request.urlopen(req, timeout=300) as resp:
+            data = resp.read()
+        if len(data) < 8192:
+            raise ValueError(
+                f"File is only {len(data)} bytes — the URL may point to a web page instead "
+                "of the raw `.pth` file. Use a **direct download** link."
+            )
+        with open(tmp, "wb") as f:
+            f.write(data)
+        os.replace(tmp, dest)
+    finally:
+        if os.path.isfile(tmp):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+    return dest
+
+
 @st.cache_resource
-def load_models(repo_id: str, hf_token: str | None):
+def load_models(
+    repo_id: str,
+    hf_token: str | None,
+    ckpt_g_ab_url: str | None,
+    ckpt_g_ba_url: str | None,
+):
     device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    def resolve_weight(hf_filename: str) -> str:
+    def resolve_weight(hf_filename: str, direct_url: str | None) -> str:
         local = _local_checkpoint(hf_filename)
         if local:
             return local
+        if direct_url:
+            return _download_ckpt_url(direct_url, os.path.basename(hf_filename))
         return hf_hub_download(
             repo_id=repo_id,
             filename=hf_filename,
             token=hf_token,
         )
 
-    G_AB_path = resolve_weight("checkpoints/G_AB_epoch35.pth")
-    G_BA_path = resolve_weight("checkpoints/G_BA_epoch35.pth")
+    G_AB_path = resolve_weight("checkpoints/G_AB_epoch35.pth", ckpt_g_ab_url)
+    G_BA_path = resolve_weight("checkpoints/G_BA_epoch35.pth", ckpt_g_ba_url)
 
     G_AB = Generator()
     G_BA = Generator()
@@ -95,21 +143,45 @@ def load_models(repo_id: str, hf_token: str | None):
 
 repo_id = _hf_repo_id()
 hf_token = _hf_token()
-try:
-    with st.spinner(f"Loading models (repo: `{repo_id}`)..."):
-        G_AB, G_BA, device = load_models(repo_id, hf_token)
-except _HF_ACCESS_ERRORS:
+url_ab, url_ba = _ckpt_direct_urls()
+if (url_ab and not url_ba) or (not url_ab and url_ba):
     st.error(
-        "Could not download model weights from Hugging Face (repo missing, **private**, **gated**, "
-        "or wrong file path). Try one of the following:\n\n"
-        "1. **Streamlit Cloud → Manage app → Secrets** — add a read token (and accept any model "
-        "license on the Hub if prompted):\n"
-        "`HF_TOKEN = \"hf_…\"`\n\n"
-        "2. Or upload `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a **public** "
-        "HF repo, then set:\n"
-        "`HF_REPO_ID = \"your_username/your_repo\"`\n\n"
-        "3. Or commit those files under `checkpoints/` in this Git repo (same paths as above)."
+        "Set **both** `CKPT_G_AB_URL` and `CKPT_G_BA_URL` in secrets (direct HTTPS links to each "
+        "`.pth` file), or leave both unset to use Hugging Face instead."
     )
+    st.stop()
+
+if repo_id == _DEFAULT_HF_REPO and not hf_token and not (url_ab and url_ba):
+    st.warning(
+        "The default Hugging Face repo often needs a **read token** or is unreachable. "
+        "Add secrets (**HF_TOKEN**), point to your own repo (**HF_REPO_ID**), or host the two "
+        "weights anywhere public and set **CKPT_G_AB_URL** + **CKPT_G_BA_URL** (direct file URLs)."
+    )
+
+_load_help = (
+    "**Fix weight loading** (pick one):\n\n"
+    "1. **HF_TOKEN** — [Create a read token](https://huggingface.co/settings/tokens), then in "
+    "Streamlit: *Manage app → Secrets*:\n`HF_TOKEN = \"hf_…\"`\n\n"
+    "2. **HF_REPO_ID** — Put `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a "
+    "**public** Hub repo, then:\n`HF_REPO_ID = \"you/repo\"`\n\n"
+    "3. **CKPT_G_AB_URL** and **CKPT_G_BA_URL** — Direct `https://…` links to each `.pth` "
+    "(Google Drive “direct” links, GitHub raw, your own server, etc.).\n\n"
+    "4. **Git** — Commit both files under `checkpoints/` in this repo (see `.gitignore` if using LFS)."
+)
+
+try:
+    spin_msg = (
+        "Loading models from direct URLs…"
+        if (url_ab and url_ba)
+        else f"Loading models (Hub: `{repo_id}`)…"
+    )
+    with st.spinner(spin_msg):
+        G_AB, G_BA, device = load_models(repo_id, hf_token, url_ab, url_ba)
+except _HF_ACCESS_ERRORS:
+    st.error(_LOAD_HELP)
+    st.stop()
+except (urllib.error.URLError, ValueError, OSError) as e:
+    st.error(_LOAD_HELP + f"\n\n_Download error:_ `{e}`")
     st.stop()
 st.success("Models loaded ✅")
 
@@ -137,9 +209,9 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Model: CycleGAN | Dataset: Satellite-Map | Epochs: 50")
 with st.sidebar.expander("Weights & deployment"):
     st.caption(
-        f"Hub repo: `{repo_id}`. For private/gated repos set **HF_TOKEN**; "
-        "to use your own files set **HF_REPO_ID** or add `checkpoints/*.pth` "
-        "next to `app.py`. See `.streamlit/secrets.toml.example`."
+        f"Hub repo: `{repo_id}`. Use **HF_TOKEN** for private/gated Hub repos, **HF_REPO_ID** for "
+        "your own public Hub repo, **CKPT_G_AB_URL** / **CKPT_G_BA_URL** for direct file links, or "
+        "`checkpoints/*.pth` next to `app.py`. See `.streamlit/secrets.toml.example`."
     )
 
 # ─────────────────────────────────────────
