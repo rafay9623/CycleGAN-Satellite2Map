@@ -1,15 +1,23 @@
+import io
 import os
 
 import numpy as np
 import streamlit as st
 import torch
 from huggingface_hub import hf_hub_download
+from huggingface_hub.errors import RepositoryNotFoundError
 from PIL import Image, ImageEnhance
 from torchvision import transforms
 
 from model import Generator
 
-from huggingface_hub.errors import RepositoryNotFoundError
+_HF_ACCESS_ERRORS = (RepositoryNotFoundError,)
+try:
+    from huggingface_hub.errors import EntryNotFoundError, GatedRepoError
+
+    _HF_ACCESS_ERRORS = (RepositoryNotFoundError, GatedRepoError, EntryNotFoundError)
+except ImportError:  # pragma: no cover
+    pass
 
 # ─────────────────────────────────────────
 # Page config
@@ -90,11 +98,12 @@ hf_token = _hf_token()
 try:
     with st.spinner(f"Loading models (repo: `{repo_id}`)..."):
         G_AB, G_BA, device = load_models(repo_id, hf_token)
-except RepositoryNotFoundError:
+except _HF_ACCESS_ERRORS:
     st.error(
-        "Could not access the Hugging Face model repo (often this means the repo is **private** "
-        "or the id is wrong). Try one of the following:\n\n"
-        "1. **Streamlit Cloud → Manage app → Secrets** — add a read token:\n"
+        "Could not download model weights from Hugging Face (repo missing, **private**, **gated**, "
+        "or wrong file path). Try one of the following:\n\n"
+        "1. **Streamlit Cloud → Manage app → Secrets** — add a read token (and accept any model "
+        "license on the Hub if prompted):\n"
         "`HF_TOKEN = \"hf_…\"`\n\n"
         "2. Or upload `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a **public** "
         "HF repo, then set:\n"
@@ -126,6 +135,12 @@ image_size = st.sidebar.selectbox("Input Resize", [128, 256, 512], index=0)
 
 st.sidebar.markdown("---")
 st.sidebar.caption("Model: CycleGAN | Dataset: Satellite-Map | Epochs: 50")
+with st.sidebar.expander("Weights & deployment"):
+    st.caption(
+        f"Hub repo: `{repo_id}`. For private/gated repos set **HF_TOKEN**; "
+        "to use your own files set **HF_REPO_ID** or add `checkpoints/*.pth` "
+        "next to `app.py`. See `.streamlit/secrets.toml.example`."
+    )
 
 # ─────────────────────────────────────────
 # Helper functions
@@ -188,28 +203,29 @@ if uploaded_file:
         col1, col2, col3 = st.columns(3)
         with col1:
             st.subheader("Input")
-            st.image(input_image, use_column_width=True)
+            st.image(input_image, use_container_width=True)
         with col2:
             st.subheader(output_label)
-            st.image(output_image, use_column_width=True)
+            st.image(output_image, use_container_width=True)
         with col3:
             st.subheader(rec_label)
-            st.image(rec_image, use_column_width=True)
+            st.image(rec_image, use_container_width=True)
     else:
         col1, col2 = st.columns(2)
         with col1:
             st.subheader("Input")
-            st.image(input_image, use_column_width=True)
+            st.image(input_image, use_container_width=True)
         with col2:
             st.subheader(output_label)
-            st.image(output_image, use_column_width=True)
+            st.image(output_image, use_container_width=True)
 
     # ── Download button ──
     st.markdown("---")
-    output_array = np.array(output_image)
+    _png_buf = io.BytesIO()
+    output_image.save(_png_buf, format="PNG")
     st.download_button(
         label="⬇️ Download Output Image",
-        data=output_image.tobytes(),
+        data=_png_buf.getvalue(),
         file_name="translated_output.png",
-        mime="image/png"
+        mime="image/png",
     )

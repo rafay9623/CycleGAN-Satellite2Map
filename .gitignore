@@ -1,0 +1,16 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Local Streamlit secrets (use secrets.toml.example as a template)
+.streamlit/secrets.toml
+
+# Large checkpoints (use HF or Streamlit secrets instead)
+checkpoints/*.pth
+checkpoints/*.pt
