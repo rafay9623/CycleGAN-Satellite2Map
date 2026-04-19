@@ -9,6 +9,8 @@ from torchvision import transforms
 
 from model import Generator
 
+from huggingface_hub.errors import RepositoryNotFoundError
+
 # ─────────────────────────────────────────
 # Page config
 # ─────────────────────────────────────────
@@ -19,50 +21,87 @@ st.markdown("Upload a satellite image and translate it to a map — powered by C
 # ─────────────────────────────────────────
 # Load models from HuggingFace (cached)
 # ─────────────────────────────────────────
-REPO_ID = "adeelumar17/cyclegan"  # replace with your HF repo
+_DEFAULT_HF_REPO = "adeelumar17/cyclegan"
+_APP_DIR = os.path.dirname(os.path.abspath(__file__))
 
-def _hf_token():
-    """Optional token: private HF repos need it; public repos work without."""
-    t = os.environ.get("HF_TOKEN")
-    if t:
-        return t
+
+def _secret_or_env(key: str, default: str | None = None) -> str | None:
+    v = os.environ.get(key)
+    if v:
+        return v
     try:
-        return st.secrets["HF_TOKEN"]
+        return st.secrets[key]
     except (KeyError, FileNotFoundError):
-        return None
+        return default
+
+
+def _hf_token() -> str | None:
+    """Private or gated HF repos need a read token (Streamlit: App settings → Secrets)."""
+    return _secret_or_env("HF_TOKEN")
+
+
+def _hf_repo_id() -> str:
+    """Override default HF repo via env or secrets, e.g. your own public model repo."""
+    return _secret_or_env("HF_REPO_ID", _DEFAULT_HF_REPO) or _DEFAULT_HF_REPO
+
+
+def _local_checkpoint(relative_path: str) -> str | None:
+    path = os.path.join(_APP_DIR, relative_path.replace("/", os.sep))
+    return path if os.path.isfile(path) else None
 
 
 @st.cache_resource
-def load_models():
-    hf_token = _hf_token()
+def load_models(repo_id: str, hf_token: str | None):
+    device = "cuda" if torch.cuda.is_available() else "cpu"
 
-    device = 'cuda' if torch.cuda.is_available() else 'cpu'
+    def resolve_weight(hf_filename: str) -> str:
+        local = _local_checkpoint(hf_filename)
+        if local:
+            return local
+        return hf_hub_download(
+            repo_id=repo_id,
+            filename=hf_filename,
+            token=hf_token,
+        )
 
-    G_AB_path = hf_hub_download(
-        repo_id="adeelumar17/cyclegan",
-        filename="checkpoints/G_AB_epoch35.pth",
-        token=hf_token,
-    )
-
-    G_BA_path = hf_hub_download(
-        repo_id="adeelumar17/cyclegan",
-        filename="checkpoints/G_BA_epoch35.pth",
-        token=hf_token,
-    )
+    G_AB_path = resolve_weight("checkpoints/G_AB_epoch35.pth")
+    G_BA_path = resolve_weight("checkpoints/G_BA_epoch35.pth")
 
     G_AB = Generator()
     G_BA = Generator()
 
-    G_AB.load_state_dict(torch.load(G_AB_path, map_location=device))
-    G_BA.load_state_dict(torch.load(G_BA_path, map_location=device))
+    def _torch_load(path: str):
+        try:
+            return torch.load(path, map_location=device, weights_only=True)
+        except TypeError:
+            return torch.load(path, map_location=device)
+
+    G_AB.load_state_dict(_torch_load(G_AB_path))
+    G_BA.load_state_dict(_torch_load(G_BA_path))
 
     G_AB.eval()
     G_BA.eval()
 
     return G_AB.to(device), G_BA.to(device), device
 
-with st.spinner("Loading models from HuggingFace..."):
-    G_AB, G_BA, device = load_models()
+
+repo_id = _hf_repo_id()
+hf_token = _hf_token()
+try:
+    with st.spinner(f"Loading models (repo: `{repo_id}`)..."):
+        G_AB, G_BA, device = load_models(repo_id, hf_token)
+except RepositoryNotFoundError:
+    st.error(
+        "Could not access the Hugging Face model repo (often this means the repo is **private** "
+        "or the id is wrong). Try one of the following:\n\n"
+        "1. **Streamlit Cloud → Manage app → Secrets** — add a read token:\n"
+        "`HF_TOKEN = \"hf_…\"`\n\n"
+        "2. Or upload `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a **public** "
+        "HF repo, then set:\n"
+        "`HF_REPO_ID = \"your_username/your_repo\"`\n\n"
+        "3. Or commit those files under `checkpoints/` in this Git repo (same paths as above)."
+    )
+    st.stop()
 st.success("Models loaded ✅")
 
 # ─────────────────────────────────────────
