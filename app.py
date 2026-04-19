@@ -1,11 +1,13 @@
+import os
+
+import numpy as np
 import streamlit as st
 import torch
-import numpy as np
+from huggingface_hub import hf_hub_download
 from PIL import Image, ImageEnhance
 from torchvision import transforms
-from huggingface_hub import hf_hub_download
+
 from model import Generator
-from huggingface_hub import hf_hub_download, login
 
 # ─────────────────────────────────────────
 # Page config
@@ -19,22 +21,33 @@ st.markdown("Upload a satellite image and translate it to a map — powered by C
 # ─────────────────────────────────────────
 REPO_ID = "adeelumar17/cyclegan"  # replace with your HF repo
 
+def _hf_token():
+    """Optional token: private HF repos need it; public repos work without."""
+    t = os.environ.get("HF_TOKEN")
+    if t:
+        return t
+    try:
+        return st.secrets["HF_TOKEN"]
+    except (KeyError, FileNotFoundError):
+        return None
+
+
 @st.cache_resource
 def load_models():
-    hf_token = st.secrets["HF_TOKEN"]
-    
+    hf_token = _hf_token()
+
     device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
     G_AB_path = hf_hub_download(
         repo_id="adeelumar17/cyclegan",
         filename="checkpoints/G_AB_epoch35.pth",
-        token=hf_token
+        token=hf_token,
     )
 
     G_BA_path = hf_hub_download(
         repo_id="adeelumar17/cyclegan",
         filename="checkpoints/G_BA_epoch35.pth",
-        token=hf_token
+        token=hf_token,
     )
 
     G_AB = Generator()
