@@ -158,7 +158,7 @@ if repo_id == _DEFAULT_HF_REPO and not hf_token and not (url_ab and url_ba):
         "weights anywhere public and set **CKPT_G_AB_URL** + **CKPT_G_BA_URL** (direct file URLs)."
     )
 
-_load_help = (
+_LOAD_HELP = (
     "**Fix weight loading** (pick one):\n\n"
     "1. **HF_TOKEN** — [Create a read token](https://huggingface.co/settings/tokens), then in "
     "Streamlit: *Manage app → Secrets*:\n`HF_TOKEN = \"hf_…\"`\n\n"
