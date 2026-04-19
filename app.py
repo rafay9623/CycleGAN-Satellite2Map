@@ -151,22 +151,47 @@ if (url_ab and not url_ba) or (not url_ab and url_ba):
     )
     st.stop()
 
-_LOAD_HELP = (
-    "1. **HF_TOKEN** — [Create a read token](https://huggingface.co/settings/tokens), then in "
-    "Streamlit: *Manage app → Secrets*:\n`HF_TOKEN = \"hf_…\"`\n\n"
-    "2. **HF_REPO_ID** — Put `G_AB_epoch35.pth` and `G_BA_epoch35.pth` under `checkpoints/` in a "
-    "**public** Hub repo, then:\n`HF_REPO_ID = \"you/repo\"`\n\n"
-    "3. **CKPT_G_AB_URL** and **CKPT_G_BA_URL** — Direct `https://…` links to each `.pth` "
-    "(Google Drive “direct” links, GitHub raw, your own server, etc.).\n\n"
-    "4. **Git** — Commit both files under `checkpoints/` in this repo (use Git LFS if files are large)."
-)
-
-
 def _show_weight_setup_help(download_detail: str | None = None) -> None:
-    st.error("Could not load model weights. Open **Weights & deployment** in the sidebar for a short summary.")
+    st.error(
+        f"Hub repo **`{_DEFAULT_HF_REPO}`** is not readable without credentials (private or restricted). "
+        "Add **Secrets** on Streamlit Cloud (*Manage app* → *Secrets*) using one of the options below."
+    )
     with st.expander("Step-by-step: fix weight loading", expanded=True):
-        st.markdown(_LOAD_HELP)
+        st.markdown(
+            "This app needs **`checkpoints/G_AB_epoch35.pth`** and **`checkpoints/G_BA_epoch35.pth`** "
+            "from training."
+        )
+        st.markdown("### A. Hugging Face read token (fastest)")
+        st.markdown(
+            "1. Open [huggingface.co/settings/tokens](https://huggingface.co/settings/tokens) and create "
+            "a token with **read** access.\n"
+            "2. In Streamlit: **Manage app** (lower right) → **Secrets**.\n"
+            "3. Paste exactly (replace with your token):"
+        )
+        st.code('HF_TOKEN = "hf_paste_your_read_token_here"', language="toml")
+        st.caption("Redeploy or reboot the app after saving secrets.")
+
+        st.markdown("### B. Your own public Hub repo")
+        st.markdown(
+            "Upload both `.pth` files under `checkpoints/` in a **public** model/dataset repo, then set:"
+        )
+        st.code('HF_REPO_ID = "your_username/your_repo"', language="toml")
+
+        st.markdown("### C. Direct file URLs (no Hub)")
+        st.markdown("Host each file anywhere with a **direct** `https://` download link, then set **both**:")
+        st.code(
+            'CKPT_G_AB_URL = "https://…/G_AB_epoch35.pth"\nCKPT_G_BA_URL = "https://…/G_BA_epoch35.pth"',
+            language="toml",
+        )
+
+        st.markdown("### D. Ship weights in Git")
+        st.markdown(
+            "Commit both files under `checkpoints/` in this repository (use **Git LFS** if GitHub rejects "
+            "large files). No secrets needed if the files are in the deployed branch."
+        )
         if download_detail:
+            st.markdown("---")
+            st.markdown("**Last download error**")
             st.text(download_detail)
 
 
@@ -210,9 +235,9 @@ st.sidebar.markdown("---")
 st.sidebar.caption("Model: CycleGAN | Dataset: Satellite-Map | Epochs: 50")
 with st.sidebar.expander("Weights & deployment"):
     st.caption(
-        f"Hub repo: `{repo_id}`. Use **HF_TOKEN** for private/gated Hub repos, **HF_REPO_ID** for "
-        "your own public Hub repo, **CKPT_G_AB_URL** / **CKPT_G_BA_URL** for direct file links, or "
-        "`checkpoints/*.pth` next to `app.py`. See `.streamlit/secrets.toml.example`."
+        f"Active Hub repo: `{repo_id}`. Default `{_DEFAULT_HF_REPO}` needs **HF_TOKEN** unless you "
+        "set **HF_REPO_ID**, **CKPT_*_URL** pairs, or commit `checkpoints/*.pth`. See "
+        "`.streamlit/secrets.toml.example`."
     )
 
 # ─────────────────────────────────────────
